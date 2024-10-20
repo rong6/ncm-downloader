@@ -8,6 +8,7 @@
 
 > [!WARNING]  
 > 本项目仍在开发中，目前可能不稳定，请酌情使用！
+> 2024.10.20：注入元数据功能暂时不可用。
 
 ## 使用
 
@@ -23,7 +24,7 @@ pip install -r requirements.txt
 
 打开`https://<YourNeteaseCloudMusicApiDomain>/qrlogin.html`，按下`F12`打开开发者工具，切换至`网络`选项卡，扫码登录网易云。  
 找到`/check?key=xxx`的相关请求，切换至`预览`选项卡，查看`message`值为`授权登陆成功`或`code`值为`803`的那个请求，右键复制上面`cookie`的值。
-![](https://go.xiaobai.mom/https://telegra.ph/file/be787d857c53f7602491d.png)。
+![cookie_setting](https://go.xiaobai.mom/https://img.pub/p/6ec896b078da279bd0a9.png)。
 
 运行：
 ``` bash
@@ -31,6 +32,8 @@ python main.py
 ```
 输入你NeteaseCloudMusicApi的网址（带协议头，结尾不带`/`），再粘贴你上面获取到的Cookie，接下来按提示操作即可。**注意，若你的账号没有会员则无法下载会员歌曲，也无法下载会员音质，无法越权使用。**
 
+## 预览图
+![preview](https://go.xiaobai.mom/https://img.pub/p/ee3c12e719ec848de7d8.png)
 ## 免责声明
 本程序仅供个人学习和交流使用，请勿将其用于任何商业目的或非法用途。使用本程序下载的内容应当符合相关法律法规和平台服务协议的要求。开发者不对因使用本程序而产生的任何直接或间接的法律责任负责。
 
