@@ -5,6 +5,7 @@ from tqdm import tqdm
 from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, USLT
 from mutagen.mp3 import MP3
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import subprocess
 
 GREEN = "\033[32m"
 RESET = "\033[0m"
@@ -108,8 +109,6 @@ def choose_concurrent_downloads():
             print("请输入有效的数字。")
 
 # 注入元数据
-# 由于注入元数据的功能不稳定，暂时注释，否则可能导致下载失败，报错"can't sync to MPEG frame"
-'''
 def inject_metadata(audio_path, song_info, lyrics, cover_data):
     audio = MP3(audio_path, ID3=ID3)
     
@@ -117,13 +116,12 @@ def inject_metadata(audio_path, song_info, lyrics, cover_data):
         audio.add_tags()
 
     audio.tags.add(TIT2(encoding=3, text=song_info['name']))
-    audio.tags.add(TPE1(encoding=3, text=song_info['artist']))
-    audio.tags.add(TALB(encoding=3, text=song_info['album']))
+    audio.tags.add(TPE1(encoding=3, text=song_info['ar'][0]['name']))
+    audio.tags.add(TALB(encoding=3, text=song_info['al']['name']))
     audio.tags.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
     audio.tags.add(APIC(encoding=3, mime='image/jpeg', type=3, desc='Cover', data=cover_data))
 
     audio.save()
-'''
 
 # 下载单首歌曲
 def download_song(song_id, quality, folder_name, lyric_option):
@@ -154,51 +152,27 @@ def download_song(song_id, quality, folder_name, lyric_option):
             lyrics = lyric_res['lrc']['lyric']
 
             # 下载歌曲
+            '''
+            你可能会很奇怪，为什么用curl下载而不是requests？
+            因为requests下载的文件无法读取元数据，使用音乐标签打开时会提示该文件是“.flac”文件，但curl下载下来的同样.mp3文件可以正常被读取元数据。
+            很神经病的问题，为了正常使用就先用curl替代一下吧，不过这样就无法显示文件下载进度了。
+            '''
             song_filename = os.path.join(folder_name, f"{album_name} - {song_name} - {artist_name}.mp3")
             print(f"正在下载：{song_filename}")
-            with requests.get(song_url, stream=True, timeout=10) as r:
-                r.raise_for_status()
-                with open(song_filename, 'wb') as f:
-                    total_size = int(r.headers.get('content-length', 0))
-                    for chunk in tqdm(r.iter_content(chunk_size=8192), total=total_size//8192, unit='KB'):
-                        f.write(chunk)
+            curl_command = [
+                "curl", "-L", "-o", song_filename, "-H", f"cookie: {cookie}", song_url
+            ]
+            process = subprocess.Popen(curl_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-            # 检查文件完整性
-            '''
-            try:
-                audio = MP3(song_filename)
-            except Exception as e:
-                print(f"文件 {song_filename} 可能不完整或已损坏，尝试重新下载...")
-                if attempt < retries - 1:
-                    continue
-                else:
-                    print(f"多次尝试后仍然失败，跳过该歌曲。")
-                    with open('fail.log', 'a') as f:
-                        f.write(f"{song_id}: 文件不完整或已损坏\n")
-                    return False
-            '''
+            # 等待curl命令完成
+            process.wait()
 
-
-            # cover_data = requests.get(album_pic_url).content
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(process.returncode, curl_command)
 
             # 注入元数据
-            '''
-            try:
-                audio = MP3(song_filename, ID3=ID3)
-                
-                if audio.tags is None:
-                    audio.add_tags()
-
-                audio.tags.add(TIT2(encoding=3, text=song_name))
-                audio.tags.add(TPE1(encoding=3, text=artist_name))
-                audio.tags.add(TALB(encoding=3, text=album_name))
-                audio.tags.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
-                audio.tags.add(APIC(encoding=3, mime='image/jpeg', type=3, desc='Cover', data=cover_data))
-
-                audio.save()
-            except Exception as e:
-                print(f"注入元数据失败: {e}")
-            '''
+            cover_data = requests.get(album_pic_url).content
+            inject_metadata(song_filename, song_info, lyrics, cover_data)
 
             # 用户选择下载歌词文件处理
             if lyric_option == '1':
@@ -212,6 +186,8 @@ def download_song(song_id, quality, folder_name, lyric_option):
 
         except requests.exceptions.RequestException as e:
             print(f"请求失败，重试中... ({e})")
+        except subprocess.CalledProcessError as e:
+            print(f"下载失败，重试中... ({e})")
         except Exception as e:
             print(f"处理失败：{e}")
             with open('fail.log', 'a') as f:

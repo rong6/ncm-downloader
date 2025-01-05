@@ -8,11 +8,11 @@
 
 > [!WARNING]  
 > 本项目仍在开发中，目前可能不稳定，请酌情使用！
-> 2024.10.20：注入元数据功能暂时不可用。
 
 ## 使用
+可以直接在[Releases](https://github.com/rong6/ncm-downloader/releases)下载构建版本。   
 
-克隆源码并安装Python库。  
+或克隆源码使用。     
 
 ``` bash
 git clone https://github.com/rong6/ncm-downloader.git
@@ -24,7 +24,7 @@ pip install -r requirements.txt
 
 打开`https://<YourNeteaseCloudMusicApiDomain>/qrlogin.html`，按下`F12`打开开发者工具，切换至`网络`选项卡，扫码登录网易云。  
 找到`/check?key=xxx`的相关请求，切换至`预览`选项卡，查看`message`值为`授权登陆成功`或`code`值为`803`的那个请求，右键复制上面`cookie`的值。
-![cookie_setting](https://go.xiaobai.mom/https://img.pub/p/6ec896b078da279bd0a9.png)。
+![cookie_setting](https://go.xiaobai.mom/https://img.pub/p/6ec896b078da279bd0a9.png)
 
 运行：
 ``` bash
