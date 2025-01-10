@@ -7,6 +7,8 @@ from mutagen.mp3 import MP3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess
 
+RED = "\033[31m"
+YELLOW = "\033[33m"
 GREEN = "\033[32m"
 RESET = "\033[0m"
 lines = [
@@ -50,31 +52,31 @@ headers = {"cookie": cookie}
 
 # 选择下载类型
 def choose_download_type():
-    print("下载类型：[1]歌曲 [2]歌单 [3]专辑 [4]歌手所有歌曲")
-    choice = input("请选择下载类型：")
-    if choice == '1':
-        return 'song', input("请输入歌曲ID：")
-    elif choice == '2':
-        return 'playlist', input("请输入歌单ID：")
-    elif choice == '3':
-        return 'album', input("请输入专辑ID：")
-    elif choice == '4':
-        return 'artist', input("请输入歌手ID：")
-    else:
-        print("输入错误，退出程序。")
-        exit()
+    while True:
+        print(f"下载类型：{GREEN}[1]{RESET}歌曲 {GREEN}[2]{RESET}歌单 {GREEN}[3]{RESET}专辑 {GREEN}[4]{RESET}歌手所有歌曲")
+        choice = input("请选择下载类型：")
+        if choice == '1':
+            return 'song', input("请输入歌曲ID：")
+        elif choice == '2':
+            return 'playlist', input("请输入歌单ID：")
+        elif choice == '3':
+            return 'album', input("请输入专辑ID：")
+        elif choice == '4':
+            return 'artist', input("请输入歌手ID：")
+        else:
+            print("输入错误，请重新输入。")
 
 # 选择音质
 def choose_quality():
     qualities = {
-        '1': 'standard => 标准',
-        '2': 'higher => 较高',
-        '3': 'exhigh => 极高',
-        '4': 'lossless => 无损',
-        '5': 'hires => Hi-Res',
-        '6': 'jyeffect => 高清环绕声',
-        '7': 'sky => 沉浸环绕声',
-        '8': 'jymaster => 超清母带'
+        '1': f'{GREEN}[1]{RESET} standard => 标准',
+        '2': f'{GREEN}[2]{RESET} higher => 较高',
+        '3': f'{GREEN}[3]{RESET} exhigh => 极高',
+        '4': f'{GREEN}[4]{RESET} lossless => 无损',
+        '5': f'{GREEN}[5]{RESET} hires => Hi-Res',
+        '6': f'{GREEN}[6]{RESET} jyeffect => 高清环绕声',
+        '7': f'{GREEN}[7]{RESET} sky => 沉浸环绕声',
+        '8': f'{GREEN}[8]{RESET} jymaster => 超清母带'
     }
     quality_levels = {
         '1': 'standard',
@@ -87,13 +89,13 @@ def choose_quality():
         '8': 'jymaster'
     }
     for k, v in qualities.items():
-        print(f"[{k}] {v}")
+        print(v)
     quality_choice = input("输入音质对应数字：")
     return quality_levels.get(quality_choice, 'standard')
 
 # 选择歌词处理方式
 def choose_lyric_option():
-    print("歌词处理方式：[1]下载歌词文件 [2]不下载歌词文件")
+    print(f"歌词处理方式：{GREEN}[1]{RESET}下载歌词文件 {GREEN}[2]{RESET}不下载歌词文件")
     return input("请选择歌词处理方式：")
 
 # 选择并发下载数量
@@ -106,7 +108,7 @@ def choose_concurrent_downloads():
             else:
                 print("请输入1到50之间的数字。")
         except ValueError:
-            print("请输入有效的数字。")
+            print(f"{RED}Error{RESET}: 请输入有效的数字。")
 
 # 注入元数据
 def inject_metadata(audio_path, song_info, lyrics, cover_data):
@@ -143,7 +145,9 @@ def download_song(song_id, quality, folder_name, lyric_option):
             song_url = download_res['data'][0]['url']
 
             if not song_url:
-                print(f"无法获取歌曲 {song_name} 的下载链接，可能是版权限制。")
+                print(f"{RED}Error{RESET}: 无法获取歌曲 {song_name} 的下载链接，可能是版权限制。")
+                with open('fail.log', 'a') as f:
+                    f.write(f"{song_id} - {song_name}: 无法获取下载链接，可能是版权限制。\n")
                 return False
 
             # 获取歌词
@@ -158,7 +162,7 @@ def download_song(song_id, quality, folder_name, lyric_option):
             很神经病的问题，为了正常使用就先用curl替代一下吧，不过这样就无法显示文件下载进度了。
             '''
             song_filename = os.path.join(folder_name, f"{album_name} - {song_name} - {artist_name}.mp3")
-            print(f"正在下载：{song_filename}")
+            print(f"{YELLOW}正在下载{RESET}：{song_filename}")
             curl_command = [
                 "curl", "-L", "-o", song_filename, "-H", f"cookie: {cookie}", song_url
             ]
@@ -179,23 +183,23 @@ def download_song(song_id, quality, folder_name, lyric_option):
                 lyric_filename = os.path.join(folder_name, f"{album_name} - {song_name} - {artist_name}.lrc")
                 with open(lyric_filename, 'w', encoding='utf-8') as f:
                     f.write(lyrics)
-                print(f"歌词已保存：{lyric_filename}")
+                print(f"{GREEN}歌词已保存{RESET}：{lyric_filename}")
 
-            print(f"下载完成：{song_filename}")
+            print(f"{GREEN}下载完成{RESET}：{song_filename}")
             return True
 
         except requests.exceptions.RequestException as e:
-            print(f"请求失败，重试中... ({e})")
+            print(f"{RED}请求失败，重试中... ({e}){RESET}")
         except subprocess.CalledProcessError as e:
-            print(f"下载失败，重试中... ({e})")
+            print(f"{RED}下载失败，重试中... ({e}){RESET}")
         except Exception as e:
-            print(f"处理失败：{e}")
+            print(f"{RED}处理失败{RESET}：{e}")
             with open('fail.log', 'a') as f:
                 f.write(f"{song_id}: {e}\n")
     else:
-        print("多次重试后仍然失败，跳过该歌曲。")
+        print(f"{YELLOW}多次重试后仍然失败，跳过该歌曲。{RESET}")
         with open('fail.log', 'a') as f:
-            f.write(f"{song_id}: 下载失败\n")
+            f.write(f"{song_id} - {song_name}: 下载失败\n")
         return False
 
 # 批量下载歌曲
@@ -206,7 +210,7 @@ def download_all(song_ids, folder_name, quality, lyric_option, max_workers):
             try:
                 future.result()
             except Exception as e:
-                print(f"下载失败：{e}")
+                print(f"{RED}下载失败{RESET}：{e}")
 
 # 主程序
 download_type, id_value = choose_download_type()
@@ -248,5 +252,5 @@ elif download_type == 'album':
     os.makedirs(folder_name, exist_ok=True)
     download_all(song_ids, folder_name, quality, lyric_option, max_workers)
 
-print("下载完成！请检查文件夹。")
+print(f"{GREEN}下载完成！请检查文件夹。{RESET}")
 print("下载失败的歌曲请查看fail.log文件。")
