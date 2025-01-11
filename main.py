@@ -5,7 +5,6 @@ from tqdm import tqdm
 from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, USLT
 from mutagen.mp3 import MP3
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import subprocess
 
 RED = "\033[31m"
 YELLOW = "\033[33m"
@@ -133,6 +132,8 @@ def download_song(song_id, quality, folder_name, lyric_option):
             # 获取歌曲详情
             song_detail_url = f"{ncmapi}/song/detail?ids={song_id}"
             song_detail_res = requests.get(song_detail_url, headers=headers, timeout=10).json()
+            if 'songs' not in song_detail_res:
+                raise KeyError("API响应中缺少'songs'字段")
             song_info = song_detail_res['songs'][0]
             song_name = song_info['name']
             artist_name = song_info['ar'][0]['name']
@@ -142,6 +143,8 @@ def download_song(song_id, quality, folder_name, lyric_option):
             # 获取下载链接
             download_url = f"{ncmapi}/song/url/v1?id={song_id}&level={quality}"
             download_res = requests.get(download_url, headers=headers, timeout=10).json()
+            if 'data' not in download_res or not download_res['data']:
+                raise KeyError("API响应中缺少'data'字段或数据为空")
             song_url = download_res['data'][0]['url']
 
             if not song_url:
@@ -153,45 +156,53 @@ def download_song(song_id, quality, folder_name, lyric_option):
             # 获取歌词
             lyric_url = f"{ncmapi}/lyric/new?id={song_id}"
             lyric_res = requests.get(lyric_url, headers=headers, timeout=10).json()
-            lyrics = lyric_res['lrc']['lyric']
+            lyrics = lyric_res.get('lrc', {}).get('lyric', '')
+
+            # 获取文件扩展名
+            head_res = requests.head(song_url, headers=headers, timeout=10)
+            content_disposition = head_res.headers.get('content-disposition', '')
+            ext = '.mp3'  # 默认扩展名
+            if 'filename=' in content_disposition:
+                ext = os.path.splitext(content_disposition.split('filename=')[-1].strip('"'))[-1]
+            # print(f"Debug: 文件扩展名：{ext}")
 
             # 下载歌曲
-            '''
-            你可能会很奇怪，为什么用curl下载而不是requests？
-            因为requests下载的文件无法读取元数据，使用音乐标签打开时会提示该文件是“.flac”文件，但curl下载下来的同样.mp3文件可以正常被读取元数据。
-            很神经病的问题，为了正常使用就先用curl替代一下吧，不过这样就无法显示文件下载进度了。
-            '''
-            song_filename = os.path.join(folder_name, f"{album_name} - {song_name} - {artist_name}.mp3")
+            song_filename = os.path.join(folder_name, f"{album_name} - {song_name} - {artist_name}{ext}")
             print(f"{YELLOW}正在下载{RESET}：{song_filename}")
-            curl_command = [
-                "curl", "-L", "-o", song_filename, "-H", f"cookie: {cookie}", song_url
-            ]
-            process = subprocess.Popen(curl_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            with requests.get(song_url, headers=headers, stream=True) as r:
+                r.raise_for_status()
+                total_size = int(r.headers.get('content-length', 0))
+                with open(song_filename, 'wb') as f, tqdm(
+                    desc=f"{song_name} - {artist_name}",
+                    total=total_size,
+                    unit='MB',
+                    unit_scale=True,
+                    unit_divisor=1024 * 1024,
+                ) as bar:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        size = f.write(chunk)
+                        bar.update(size / (1024 * 1024))
 
-            # 等待curl命令完成
-            process.wait()
+            # 确保文件下载完成后再进行元数据注入
+            if os.path.getsize(song_filename) == total_size:
+                # 注入元数据
+                cover_data = requests.get(album_pic_url).content
+                inject_metadata(song_filename, song_info, lyrics, cover_data)
 
-            if process.returncode != 0:
-                raise subprocess.CalledProcessError(process.returncode, curl_command)
+                # 用户选择下载歌词文件处理
+                if lyric_option == '1':
+                    lyric_filename = os.path.join(folder_name, f"{album_name} - {song_name} - {artist_name}.lrc")
+                    with open(lyric_filename, 'w', encoding='utf-8') as f:
+                        f.write(lyrics)
+                    print(f"{GREEN}歌词已保存{RESET}：{lyric_filename}")
 
-            # 注入元数据
-            cover_data = requests.get(album_pic_url).content
-            inject_metadata(song_filename, song_info, lyrics, cover_data)
-
-            # 用户选择下载歌词文件处理
-            if lyric_option == '1':
-                lyric_filename = os.path.join(folder_name, f"{album_name} - {song_name} - {artist_name}.lrc")
-                with open(lyric_filename, 'w', encoding='utf-8') as f:
-                    f.write(lyrics)
-                print(f"{GREEN}歌词已保存{RESET}：{lyric_filename}")
-
-            print(f"{GREEN}下载完成{RESET}：{song_filename}")
-            return True
+                print(f"{GREEN}下载完成{RESET}：{song_filename}")
+                return True
+            else:
+                raise Exception("文件大小不匹配，下载可能不完整。")
 
         except requests.exceptions.RequestException as e:
             print(f"{RED}请求失败，重试中... ({e}){RESET}")
-        except subprocess.CalledProcessError as e:
-            print(f"{RED}下载失败，重试中... ({e}){RESET}")
         except Exception as e:
             print(f"{RED}处理失败{RESET}：{e}")
             with open('fail.log', 'a') as f:
@@ -221,6 +232,8 @@ max_workers = choose_concurrent_downloads()
 if download_type == 'artist':
     artist_albums_url = f"{ncmapi}/artist/album?id={id_value}"
     artist_albums_res = requests.get(artist_albums_url, headers=headers).json()
+    if 'hotAlbums' not in artist_albums_res:
+        raise KeyError("API响应中缺少'hotAlbums'字段")
     albums = artist_albums_res['hotAlbums']
 
     for album in albums:
@@ -231,6 +244,8 @@ if download_type == 'artist':
 
         album_tracks_url = f"{ncmapi}/album?id={album['id']}"
         album_tracks_res = requests.get(album_tracks_url, headers=headers).json()
+        if 'songs' not in album_tracks_res:
+            raise KeyError("API响应中缺少'songs'字段")
         song_ids = [str(track['id']) for track in album_tracks_res['songs']]
         download_all(song_ids, folder_name, quality, lyric_option, max_workers)
 
@@ -239,6 +254,8 @@ elif download_type == 'song':
 elif download_type == 'playlist':
     playlist_url = f"{ncmapi}/playlist/track/all?id={id_value}"
     playlist_res = requests.get(playlist_url, headers=headers).json()
+    if 'songs' not in playlist_res:
+        raise KeyError("API响应中缺少'songs'字段")
     song_ids = [str(song['id']) for song in playlist_res['songs']]
     folder_name = f"Playlist - {id_value}"
     os.makedirs(folder_name, exist_ok=True)
@@ -246,6 +263,8 @@ elif download_type == 'playlist':
 elif download_type == 'album':
     album_tracks_url = f"{ncmapi}/album?id={id_value}"
     album_tracks_res = requests.get(album_tracks_url, headers=headers).json()
+    if 'songs' not in album_tracks_res:
+        raise KeyError("API响应中缺少'songs'字段")
     song_ids = [str(track['id']) for track in album_tracks_res['songs']]
     album_name = album_tracks_res['album']['name']
     folder_name = f"专辑 - {album_name}"
