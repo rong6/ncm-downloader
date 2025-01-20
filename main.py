@@ -136,6 +136,23 @@ def inject_metadata(audio_path, song_info, lyrics, cover_data):
         audio.add_picture(picture)
         audio.save()
 
+# 处理歌词数据
+def process_lyrics(lyrics):
+    lines = lyrics.split('\n')
+    processed_lyrics = []
+    for line in lines:
+        if line.startswith('{"t":'):
+            json_line = json.loads(line)
+            timestamp = json_line['t']
+            text = ''.join([c['tx'] for c in json_line['c']])
+            minutes = timestamp // 60000
+            seconds = (timestamp % 60000) // 1000
+            milliseconds = timestamp % 1000
+            processed_lyrics.append(f"[{minutes:02}:{seconds:02}.{milliseconds:03}]{text}")
+        else:
+            processed_lyrics.append(line)
+    return '\n'.join(processed_lyrics)
+
 # 下载单首歌曲
 def download_song(song_id, quality, folder_name, lyric_option):
     retries = 3
@@ -170,7 +187,8 @@ def download_song(song_id, quality, folder_name, lyric_option):
             # 获取歌词
             lyric_url = f"{ncmapi}/lyric/new?id={song_id}"
             lyric_res = requests.get(lyric_url, headers=headers, timeout=10).json()
-            lyrics = lyric_res.get('lrc', {}).get('lyric', '')
+            raw_lyrics = lyric_res.get('lrc', {}).get('lyric', '')
+            lyrics = process_lyrics(raw_lyrics)
 
             # 设置文件扩展名
             ext = f".{type.lower()}"
