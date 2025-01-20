@@ -4,6 +4,7 @@ import requests
 from tqdm import tqdm
 from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, USLT
 from mutagen.mp3 import MP3
+from mutagen.flac import FLAC, Picture
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 RED = "\033[31m"
@@ -111,18 +112,29 @@ def choose_concurrent_downloads():
 
 # 注入元数据
 def inject_metadata(audio_path, song_info, lyrics, cover_data):
-    audio = MP3(audio_path, ID3=ID3)
-    
-    if audio.tags is None:
-        audio.add_tags()
-
-    audio.tags.add(TIT2(encoding=3, text=song_info['name']))
-    audio.tags.add(TPE1(encoding=3, text=song_info['ar'][0]['name']))
-    audio.tags.add(TALB(encoding=3, text=song_info['al']['name']))
-    audio.tags.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
-    audio.tags.add(APIC(encoding=3, mime='image/jpeg', type=3, desc='Cover', data=cover_data))
-
-    audio.save()
+    ext = os.path.splitext(audio_path)[-1].lower()
+    if ext == '.mp3':
+        audio = MP3(audio_path, ID3=ID3)
+        if audio.tags is None:
+            audio.add_tags()
+        audio.tags.add(TIT2(encoding=3, text=song_info['name']))
+        audio.tags.add(TPE1(encoding=3, text=song_info['ar'][0]['name']))
+        audio.tags.add(TALB(encoding=3, text=song_info['al']['name']))
+        audio.tags.add(USLT(encoding=3, lang='eng', desc='', text=lyrics))
+        audio.tags.add(APIC(encoding=3, mime='image/jpeg', type=3, desc='Cover', data=cover_data))
+        audio.save()
+    elif ext == '.flac':
+        audio = FLAC(audio_path)
+        audio['title'] = song_info['name']
+        audio['artist'] = song_info['ar'][0]['name']
+        audio['album'] = song_info['al']['name']
+        audio['lyrics'] = lyrics
+        picture = Picture()
+        picture.data = cover_data
+        picture.type = 3
+        picture.mime = 'image/jpeg'
+        audio.add_picture(picture)
+        audio.save()
 
 # 下载单首歌曲
 def download_song(song_id, quality, folder_name, lyric_option):
@@ -145,7 +157,9 @@ def download_song(song_id, quality, folder_name, lyric_option):
             download_res = requests.get(download_url, headers=headers, timeout=10).json()
             if 'data' not in download_res or not download_res['data']:
                 raise KeyError("API响应中缺少'data'字段或数据为空")
-            song_url = download_res['data'][0]['url']
+            song_data = download_res['data'][0]
+            song_url = song_data['url']
+            type = song_data.get('type', 'mp3')
 
             if not song_url:
                 print(f"{RED}Error{RESET}: 无法获取歌曲 {song_name} 的下载链接，可能是版权限制。")
@@ -158,13 +172,10 @@ def download_song(song_id, quality, folder_name, lyric_option):
             lyric_res = requests.get(lyric_url, headers=headers, timeout=10).json()
             lyrics = lyric_res.get('lrc', {}).get('lyric', '')
 
-            # 获取文件扩展名
-            head_res = requests.head(song_url, headers=headers, timeout=10)
-            content_disposition = head_res.headers.get('content-disposition', '')
-            ext = '.mp3'  # 默认扩展名
-            if 'filename=' in content_disposition:
-                ext = os.path.splitext(content_disposition.split('filename=')[-1].strip('"'))[-1]
-            # print(f"Debug: 文件扩展名：{ext}")
+            # 设置文件扩展名
+            ext = f".{type.lower()}"
+            if ext not in ['.mp3', '.flac']:
+                ext = '.mp3'  # 默认使用mp3
 
             # 下载歌曲
             song_filename = os.path.join(folder_name, f"{album_name} - {song_name} - {artist_name}{ext}")
